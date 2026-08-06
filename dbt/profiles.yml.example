@@ -1,0 +1,40 @@
+# Copy this to C:\Users\omarj\.dbt\profiles.yml
+#
+# Values below are already filled in from your Serverless Starter Warehouse
+# connection details. Nothing here needs changing.
+#
+# WHY auth_type: oauth
+#   You already ran `databricks auth login`, which wrote an OAuth profile to
+#   C:\Users\omarj\.databrickscfg. The dbt-databricks adapter reuses that same
+#   credential store, so there is no token to create, copy, or rotate. This is
+#   user-to-machine (U2M) auth: you authenticate as yourself, via browser, with
+#   short-lived tokens.
+#
+#   Heads up: `dbt init` may only offer "use access token" in its interactive
+#   prompts even though Databricks documents OAuth as the recommendation. That
+#   is a known gap in the init wizard, not in the adapter. Hand-writing this
+#   file, as you are doing here, sidesteps it entirely.
+
+policy_copilot:
+  target: dev
+  outputs:
+    dev:
+      type: databricks
+      # Server hostname WITHOUT the https:// prefix.
+      host: dbc-1d037021-8869.cloud.databricks.com
+      http_path: /sql/1.0/warehouses/d28a870cbb9ba3dd
+      auth_type: oauth
+
+      # Unity Catalog: dbt writes into policy_copilot.<schema>.<model>.
+      # The per-folder +schema settings in dbt_project.yml override `schema`
+      # below, so silver models land in policy_copilot.silver and gold models
+      # in policy_copilot.gold.
+      catalog: policy_copilot
+      schema: silver
+
+      # How many models dbt builds in parallel. Free Edition gives you one
+      # small serverless warehouse, so keep this low. 4 is a reasonable start.
+      threads: 4
+
+      # Serverless warehouses auto-stop when idle and take a while to wake.
+      connect_timeout: 300

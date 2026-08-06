@@ -1,0 +1,22 @@
+name: policy_copilot
+version: "1.0.0"
+config-version: 2
+
+profile: policy_copilot          # must match the key in profiles.yml
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  policy_copilot:
+    silver:
+      # Silver rebuilds fully on every run. That is fine and desirable here:
+      # these tables are small, nothing downstream syncs off them directly,
+      # and a full rebuild means a parser change is reflected immediately.
+      +materialized: table
+      +schema: silver
+    gold:
+      +schema: gold

@@ -1,0 +1,33 @@
+version: 2
+
+sources:
+  - name: bronze
+    catalog: policy_copilot
+    schema: bronze
+    description: >
+      Raw documents as received by the FastAPI /ingest endpoint. Never
+      transformed in place. Declaring this as a dbt `source` rather than
+      referencing the table directly is what gives you lineage: dbt now knows
+      every downstream model traces back here, and renders it in the docs graph.
+    tables:
+      - name: raw_documents
+        description: One row per document, keyed on (doc_type, source_id) by the MERGE in the ingestion API.
+        columns:
+          - name: source_id
+            tests:
+              - not_null
+          - name: doc_type
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ["sorn", "nist_control"]
+          - name: raw_text
+            tests:
+              - not_null
+        # Freshness: warns if nothing has been ingested recently. This is the
+        # declarative version of the source-freshness check in your DHS
+        # validation framework.
+        loaded_at_field: ingested_at
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 30, period: day}

@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Two ways to point the app at your SQL warehouse. Option A is already filled
+# in below with your warehouse ID. See the comments in the env block.
+# ---------------------------------------------------------------------------
+
+# How Databricks starts your app. Note that this does NOT run in a shell, so
+# shell syntax (pipes, FOO=bar prefixes, &&) will not work here. Anything the
+# app needs must go in the env block below instead.
+command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+env:
+  # ------------------------------------------------------------------------
+  # OPTION A (simplest, use this to get unblocked):
+  # Hardcode the warehouse ID directly. A warehouse ID is an identifier, not
+  # a credential, so this is safe to commit. It comes from the last segment
+  # of the HTTP path shown on the SQL Warehouse's "Connection details" tab:
+  #   /sql/1.0/warehouses/d28a870cbb9ba3dd  ->  d28a870cbb9ba3dd
+  # ------------------------------------------------------------------------
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    value: "d28a870cbb9ba3dd"
+
+  # ------------------------------------------------------------------------
+  # OPTION B (better practice, switch to this once the app works):
+  # Instead of the two lines above, use:
+  #
+  #   - name: "DATABRICKS_WAREHOUSE_ID"
+  #     valueFrom: "sql_warehouse"
+  #
+  # Here "sql_warehouse" is NOT a placeholder and NOT the warehouse ID. It is
+  # a *resource key*, a label you assign when you attach the SQL warehouse to
+  # this app in the Apps UI. Databricks looks up the resource with that key at
+  # deploy time and substitutes the real ID. The wiring is:
+  #
+  #   Apps UI: attach SQL warehouse, resource key -> sql_warehouse
+  #   app.yaml: valueFrom: "sql_warehouse"        -> resolves to d28a870cbb9ba3dd
+  #   app.py: os.environ["DATABRICKS_WAREHOUSE_ID"]
+  #
+  # Why bother: attaching it as a resource also grants the app's service
+  # principal permission on the warehouse automatically, and keeps the config
+  # portable if you ever move workspaces. If the key in the UI does not match
+  # the string exactly, the env var is missing and the app fails on startup.
+  # ------------------------------------------------------------------------

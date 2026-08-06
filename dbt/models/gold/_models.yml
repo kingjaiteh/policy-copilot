@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: document_chunks
+    description: >
+      Unified chunk table across both corpora. This is the table the AI Search
+      index reads from, which raises the stakes on its tests: a duplicate or
+      null key here does not just produce bad analytics, it corrupts retrieval
+      and the agent cites the wrong thing.
+    columns:
+      - name: chunk_id
+        description: >
+          Primary key for the vector index. Deliberately NOT named `_id`, which
+          is reserved by AI Search and will cause index creation to fail.
+        tests:
+          # CRITICAL, both. Vector index sync keys on this.
+          - not_null: {config: {severity: error}}
+          - unique: {config: {severity: error}}
+
+      - name: chunk_text
+        description: Text that gets embedded. Prefixed with title and heading for context.
+        tests:
+          - not_null: {config: {severity: error}}
+
+      - name: doc_type
+        tests:
+          - not_null: {config: {severity: error}}
+          - accepted_values:
+              values: ["sorn", "nist_control"]
+              config: {severity: error}
+
+      - name: chunk_type
+        tests:
+          - accepted_values:
+              values: ["section", "routine_use", "control", "control_enhancement"]
+              config: {severity: error}
+
+    tests:
+      # WARN. Very short chunks embed poorly: they carry too little signal to
+      # match a query, so they either never surface or surface spuriously.
+      # Tolerate a handful, investigate if it becomes common.
+      - dbt_utils.expression_is_true:
+          expression: "chunk_char_count >= 50"
+          config:
+            severity: warn
+            warn_if: ">0"
+            error_if: ">25"
+
+      # WARN. BGE embedding models truncate past their context window, so an
+      # oversized chunk silently loses its tail. Worth knowing about.
+      - dbt_utils.expression_is_true:
+          expression: "chunk_char_count <= 6000"
+          config:
+            severity: warn
+            warn_if: ">0"
+            error_if: ">10"

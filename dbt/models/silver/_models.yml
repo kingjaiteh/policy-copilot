@@ -1,0 +1,120 @@
+version: 2
+
+# SEVERITY TIERING
+# ----------------
+# dbt tests take `severity: error` (fails the run, blocks downstream models)
+# or `severity: warn` (logs, keeps going). A warn can also be escalated by
+# threshold: `warn_if` / `error_if` turn a soft signal into a hard failure
+# once enough rows breach it.
+#
+# The mapping to the framework you built at DHS:
+#   CRITICAL -> severity: error   (structural: nulls in keys, broken joins)
+#   WARN     -> severity: warn    (quality: null rates, thin content)
+
+models:
+  - name: stg_sorn
+    description: One row per SORN, metadata JSON parsed into typed columns.
+    columns:
+      - name: source_id
+        description: SORN identifier, unique per document.
+        tests:
+          - not_null:
+              config: {severity: error}
+          - unique:
+              config: {severity: error}
+
+      - name: parse_failed
+        description: True when from_json could not match the metadata to the schema.
+        tests:
+          # CRITICAL. A parse failure means schema drift between the parser and
+          # this model, and every chunk from that document silently disappears.
+          - accepted_values:
+              values: [false]
+              config:
+                severity: error
+
+      - name: title
+        tests:
+          # WARN. A missing title degrades chunk context but does not break
+          # retrieval. Tolerate a couple; fail if it becomes systemic.
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">0"
+                error_if: ">5"
+
+      - name: section_count
+        tests:
+          - not_null:
+              config: {severity: warn}
+
+    tests:
+      # WARN. A SORN with no sections produces no chunks at all, so it is
+      # invisible to the copilot. Worth surfacing even though it is not fatal.
+      - dbt_utils.expression_is_true:
+          expression: "section_count > 0"
+          config:
+            severity: warn
+            warn_if: ">0"
+            error_if: ">3"
+
+  - name: stg_nist_control
+    description: One row per NIST 800-53 control or enhancement.
+    columns:
+      - name: source_id
+        tests:
+          - not_null: {config: {severity: error}}
+          - unique: {config: {severity: error}}
+      - name: parse_failed
+        tests:
+          - accepted_values:
+              values: [false]
+              config: {severity: error}
+      - name: family_id
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: is_enhancement
+        tests:
+          - not_null: {config: {severity: warn}}
+
+    tests:
+      # CRITICAL. Every enhancement must name its parent control, otherwise
+      # the agent cannot explain AC-2(1) in the context of AC-2.
+      - dbt_utils.expression_is_true:
+          expression: "not (is_enhancement and parent_control is null)"
+          config: {severity: error}
+
+  - name: sorn_sections
+    description: One row per SORN section. The chunking step for SORNs.
+    columns:
+      - name: section_text
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: source_id
+        tests:
+          # REFERENTIAL INTEGRITY (CRITICAL). Every section must trace back to
+          # a parsed SORN. If explode ever produces an orphan, this catches it.
+          - relationships:
+              to: ref('stg_sorn')
+              field: source_id
+              config: {severity: error}
+
+    tests:
+      # ROW-COUNT PARITY (WARN). There must be at least as many sections as
+      # documents; if not, explode is dropping documents wholesale.
+      - dbt_utils.fewer_rows_than:
+          compare_model: ref('stg_sorn')
+          config: {severity: error}
+
+  - name: sorn_routine_uses
+    description: One row per routine use, with subitems folded into the text.
+    columns:
+      - name: routine_use_full_text
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: source_id
+        tests:
+          - relationships:
+              to: ref('stg_sorn')
+              field: source_id
+              config: {severity: error}

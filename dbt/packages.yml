@@ -1,0 +1,6 @@
+# dbt_utils gives you expression_is_true and fewer_rows_than, which are what
+# turn "null rate under 5%" and "row-count parity" from hand-written SQL into
+# declarative config. Install with:  dbt deps
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.1.0", "<2.0.0"]

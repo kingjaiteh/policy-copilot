@@ -1,0 +1,38 @@
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# --- dbt ---
+# Build artifacts and installed packages, all regenerable by `dbt deps` / `dbt build`.
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+# The real profiles.yml lives in ~/.dbt/. If a copy ever lands in the project,
+# keep it out of the repo -- profiles.yml.example is the one that gets committed.
+profiles.yml
+!profiles.yml.example
+
+# --- Credentials ---
+.env
+.databrickscfg
+*.pem
+*service-account*.json
+
+# --- Local data ---
+# Source corpora and query exports. The SORN .docx files are already ingested
+# into policy_copilot.bronze; the repo carries the code, not the documents.
+data/
+
+# NIST OSCAL download cache and dry-run output from scripts/fetch_nist_controls.py.
+# The catalog JSON is ~10MB and re-downloadable from usnistgov/oscal-content.
+nist_cache/
+nist_payloads.json
+scripts/nist_cache/
+scripts/nist_payloads.json
+
+# --- OS ---
+Thumbs.db
+.DS_Store
