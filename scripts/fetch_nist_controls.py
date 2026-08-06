@@ -14,6 +14,17 @@ Usage:
     python fetch_nist_controls.py                      # default families, POST to APP_URL
     python fetch_nist_controls.py --families ac au ia  # pick your own
     python fetch_nist_controls.py --all-families       # everything (~1,190 docs)
+
+HOW TO ACTUALLY LOAD THESE: the POST path needs the FastAPI app deployed and
+APP_URL set. The SDK path does not, and is the one in use here -- write the
+payloads, then hand them to the loader that already batches and MERGEs the
+SORN corpus:
+
+    python fetch_nist_controls.py --dry-run
+    python load_to_delta.py --payloads nist_payloads.json
+
+Same bronze table, same MERGE on (doc_type, source_id), so re-running either
+updates rather than duplicates.
 """
 
 import argparse
@@ -40,7 +51,7 @@ BASELINE_URLS = {
 # overlap most directly with Privacy Act obligations.
 DEFAULT_FAMILIES = ["ac", "au", "ia", "sc", "pt", "pm"]
 
-CACHE = Path("nist_cache")
+CACHE = Path(__file__).resolve().parent / "nist_cache"
 
 # OSCAL embeds organization-defined parameters as {{ insert: param, ac-1_prm_1 }}.
 # Left alone these are noise in an embedding. We substitute the parameter's
@@ -188,14 +199,21 @@ def main():
     print(f"built {len(docs)} documents")
 
     if args.dry_run:
-        Path("nist_payloads.json").write_text(json.dumps(docs, indent=2), encoding="utf-8")
-        print("wrote nist_payloads.json")
+        out = Path(__file__).resolve().parent / "nist_payloads.json"
+        out.write_text(json.dumps(docs, indent=2), encoding="utf-8")
+        print(f"wrote {out}")
+        print(f"\nload it with:  python load_to_delta.py --payloads {out.name}")
         print("\n--- sample ---")
         print(docs[0]["raw_text"][:700])
         return
 
     if APP_URL.startswith("PASTE"):
-        sys.exit("Set APP_URL first, or run with --dry-run.")
+        sys.exit(
+            "APP_URL is not set, so there is nowhere to POST.\n"
+            "The app is not deployed; use the SDK path instead:\n"
+            "  python fetch_nist_controls.py --dry-run\n"
+            "  python load_to_delta.py --payloads nist_payloads.json"
+        )
 
     ok = failed = 0
     for i, doc in enumerate(docs, 1):

@@ -14,8 +14,13 @@ Setup (PowerShell):
 
 Usage:
     python load_to_delta.py --dry-run     # show the batch plan, no SQL
-    python load_to_delta.py               # load everything
+    python load_to_delta.py               # load the SORN corpus
     python load_to_delta.py --create-table
+
+    # Load any /ingest-shaped payloads instead of parsing .docx. This is the
+    # NIST path: fetch_nist_controls.py --dry-run writes the file, this loads it.
+    python fetch_nist_controls.py --dry-run
+    python load_to_delta.py --payloads nist_payloads.json
 
 Why batching
 ------------
@@ -53,6 +58,13 @@ TABLE = "policy_copilot.bronze.raw_documents"
 # request body carrying the parameters, and a smaller budget also keeps any
 # single failed batch cheap to retry. Raise it if you want fewer round trips.
 DEFAULT_BATCH_BYTES = 800_000
+
+# Rows per batch, bounding bound-parameter count: this many rows x len(COLUMNS)
+# parameters per row. 40 x 6 = 240, which stays under the Statement Execution
+# API's documented ceiling on parameters per statement with room to spare.
+# Only ever binding at the 3-figure level means the ceiling never becomes the
+# thing you are debugging.
+DEFAULT_BATCH_ROWS = 40
 
 # The corpus lives outside the repo (data/ is gitignored). Resolved from this
 # file rather than the CWD so the script works from anywhere.
@@ -120,6 +132,42 @@ def build_row(record: dict, ingested_at: str) -> dict:
     }
 
 
+def build_payload_row(payload: dict, ingested_at: str) -> dict:
+    """Flatten an /ingest-shaped payload into the six bronze columns.
+
+    The SORN path above starts from a parsed .docx and has to assemble metadata
+    itself. This one starts from a payload that is already in the shape the
+    FastAPI /ingest endpoint accepts -- doc_type, source_id, raw_text, and a
+    metadata dict -- so there is nothing to assemble. That is what lets
+    fetch_nist_controls.py --dry-run feed this loader: same MERGE, same
+    batching, same idempotency, without deploying the app to receive a POST.
+    """
+    missing = [k for k in ("doc_type", "source_id", "raw_text") if not payload.get(k)]
+    if missing:
+        raise ValueError(
+            f"payload missing required field(s) {', '.join(missing)}: "
+            f"{json.dumps(payload)[:200]}"
+        )
+    return {
+        "ingestion_id": str(uuid.uuid4()),
+        "doc_type": payload["doc_type"],
+        "source_id": payload["source_id"],
+        "raw_text": payload["raw_text"],
+        "metadata": json.dumps(payload.get("metadata") or {}, ensure_ascii=False),
+        "ingested_at": ingested_at,
+    }
+
+
+def load_payloads(path: Path) -> list[dict]:
+    """Read a JSON file of /ingest payloads, as written by --dry-run producers."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        raise ValueError(f"{path} must hold a JSON list of payloads, got {type(data).__name__}")
+    return data
+
+
 def row_bytes(row: dict) -> int:
     return sum(len(str(value).encode("utf-8")) for value in row.values())
 
@@ -143,16 +191,24 @@ def dedupe_rows(rows: list[dict]) -> tuple[list[dict], list[str]]:
     return list(seen.values()), duplicates
 
 
-def batch_rows(rows: list[dict], budget: int) -> list[list[dict]]:
-    """Group rows into batches under a byte budget (min one row per batch).
+def batch_rows(rows: list[dict], budget: int, max_rows: int = DEFAULT_BATCH_ROWS) -> list[list[dict]]:
+    """Group rows into batches under BOTH a byte budget and a row cap.
 
-    Sizing by bytes rather than row count is deliberate. Payloads in this
+    Sizing by bytes rather than row count is deliberate. Payloads in the SORN
     corpus range from ~21 KB (DHS/USCG-016) to ~110 KB (DHS/USCIS/ICE/CBP-001),
     a 5x spread, so a fixed batch of 10 could produce anything from a 210 KB
     request to a 1.1 MB one depending purely on which documents happened to
     sort together. A byte budget makes request size predictable regardless of
     corpus composition, which is what you want when the failure mode you are
     avoiding is an oversized request body.
+
+    The row cap covers the opposite case, which NIST exposed. A byte budget
+    alone bounds the size of the request but says nothing about how many rows
+    are in it, and every row binds len(COLUMNS) parameters. NIST controls are
+    ~1.3 KB each against the SORNs' ~55 KB, so all 510 of them fit inside one
+    800 KB budget -- one statement carrying 3,060 bound parameters, well past
+    what the Statement Execution API accepts. Bytes and parameter count are
+    independent limits and each needs its own bound.
 
     A single row larger than the budget still gets its own batch rather than
     being dropped -- it may or may not succeed, but silently discarding a
@@ -164,7 +220,9 @@ def batch_rows(rows: list[dict], budget: int) -> list[list[dict]]:
 
     for row in rows:
         size = row_bytes(row)
-        if current and current_bytes + size > budget:
+        over_bytes = current_bytes + size > budget
+        over_rows = len(current) >= max_rows
+        if current and (over_bytes or over_rows):
             batches.append(current)
             current, current_bytes = [], 0
         current.append(row)
@@ -290,10 +348,15 @@ def merge_receipt(response) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dir", default=str(DEFAULT_DOCS_DIR),
-                        help="directory of .docx files")
+                        help="directory of .docx files (SORN corpus)")
+    parser.add_argument("--payloads", type=Path, default=None,
+                        help="JSON file of /ingest payloads to load instead of "
+                             "parsing .docx (e.g. nist_payloads.json)")
     parser.add_argument("--dry-run", action="store_true", help="show the plan, run no SQL")
     parser.add_argument("--create-table", action="store_true", help="CREATE TABLE IF NOT EXISTS first")
     parser.add_argument("--batch-bytes", type=int, default=DEFAULT_BATCH_BYTES)
+    parser.add_argument("--batch-rows", type=int, default=DEFAULT_BATCH_ROWS,
+                        help="max documents per batch, bounding bound-parameter count")
     parser.add_argument(
         "--include-empty",
         action="store_true",
@@ -301,27 +364,47 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    records = sorn_parser.parse_directory(args.dir)
-    if not records:
-        print(f"No .docx files found in {args.dir}")
-        return 1
-
-    skipped = [r for r in records if r["parse_status"] == "empty" and not args.include_empty]
-    loadable = [r for r in records if r not in skipped]
-
     ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    rows = [build_row(r, ingested_at) for r in loadable]
+
+    if args.payloads:
+        if not args.payloads.exists():
+            print(f"No such payloads file: {args.payloads}", file=sys.stderr)
+            return 1
+        payloads = load_payloads(args.payloads)
+        if not payloads:
+            print(f"{args.payloads} holds no payloads")
+            return 1
+        source_label = str(args.payloads)
+        total_read = len(payloads)
+        skipped = []
+        try:
+            rows = [build_payload_row(p, ingested_at) for p in payloads]
+        except ValueError as exc:
+            print(f"Bad payload: {exc}", file=sys.stderr)
+            return 1
+    else:
+        records = sorn_parser.parse_directory(args.dir)
+        if not records:
+            print(f"No .docx files found in {args.dir}")
+            return 1
+        source_label = str(args.dir)
+        total_read = len(records)
+        skipped = [r for r in records if r["parse_status"] == "empty" and not args.include_empty]
+        loadable = [r for r in records if r not in skipped]
+        rows = [build_row(r, ingested_at) for r in loadable]
+
     rows, duplicates = dedupe_rows(rows)
-    batches = batch_rows(rows, args.batch_bytes)
+    batches = batch_rows(rows, args.batch_bytes, args.batch_rows)
 
     total_bytes = sum(row_bytes(r) for r in rows)
-    print(f"Parsed {len(records)} document(s) from {args.dir}")
+    print(f"Read {total_read} document(s) from {source_label}")
     print(f"  loadable : {len(rows)}")
     print(f"  skipped  : {len(skipped)} (empty capture)")
     if duplicates:
         print(f"  duplicate source_ids collapsed: {', '.join(duplicates)}")
     print(f"  payload  : {total_bytes:,} bytes")
-    print(f"  batches  : {len(batches)} (budget {args.batch_bytes:,} bytes)\n")
+    print(f"  batches  : {len(batches)} (budget {args.batch_bytes:,} bytes, "
+          f"max {args.batch_rows} rows)\n")
 
     for i, batch in enumerate(batches, 1):
         size = sum(row_bytes(r) for r in batch)

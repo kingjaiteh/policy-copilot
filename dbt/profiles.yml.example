@@ -26,9 +26,16 @@ policy_copilot:
       auth_type: oauth
 
       # Unity Catalog: dbt writes into policy_copilot.<schema>.<model>.
-      # The per-folder +schema settings in dbt_project.yml override `schema`
-      # below, so silver models land in policy_copilot.silver and gold models
-      # in policy_copilot.gold.
+      #
+      # `schema` below is the fallback for any model without a +schema config.
+      # The per-folder +schema settings in dbt_project.yml take over from it,
+      # so silver models land in policy_copilot.silver and gold models in
+      # policy_copilot.gold.
+      #
+      # That only holds because of macros/generate_schema_name.sql. dbt's
+      # built-in behaviour is to CONCATENATE the two, which would put these
+      # models in silver_silver and silver_gold. The macro makes +schema
+      # absolute; see the comment in it before changing either setting.
       catalog: policy_copilot
       schema: silver
 

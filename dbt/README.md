@@ -54,6 +54,11 @@ so a model whose upstream tests failed does not get built on bad data.
 - **severity**: `error` fails the run and blocks downstream models; `warn`
   logs and continues. `warn_if` / `error_if` add row-count thresholds so a soft
   signal escalates once it becomes systemic.
+- **generate_schema_name**: the macro deciding what schema a model lands in.
+  Overridden in `macros/` because dbt's default appends `+schema` to the
+  profile's schema (`silver` + `gold` -> `silver_gold`) instead of replacing
+  it. Without the override these models build into the wrong schemas and the
+  vector index points at a table that does not exist.
 
 ## The one thing not to change
 
