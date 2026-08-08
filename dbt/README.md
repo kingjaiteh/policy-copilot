@@ -1,13 +1,21 @@
-# Policy Copilot - dbt transforms (Week 2)
+# Policy Copilot - dbt transforms
 
 Bronze to silver to gold, as declarative SQL with lineage and tests.
+
+This project turns the raw policy documents sitting in
+`policy_copilot.bronze.raw_documents` into retrieval-ready text. Two document
+types arrive there: Privacy Act **SORNs** parsed from `.docx`, and **NIST SP
+800-53 Rev 5** controls pulled from the OSCAL catalog. Silver normalizes each
+type and splits SORNs into their sections and routine-use statements; gold
+unions everything into one chunk table with consistent ids, text, and metadata.
+
 Output is `policy_copilot.gold.document_chunks`, the table the AI Search
 index reads from.
 
 ## Lineage
 
 ```
-bronze.raw_documents (source, written by the FastAPI /ingest app)
+bronze.raw_documents (source, written by scripts/load_to_delta.py)
    |
    +-- stg_sorn ------------+-- sorn_sections ------+
    |                        |                       |
