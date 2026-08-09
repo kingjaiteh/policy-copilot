@@ -59,6 +59,16 @@ with sorn_section_chunks as (
         content_sha256,
         ingested_at
     from {{ ref('sorn_sections') }}
+    -- The routine-uses section is deliberately EXCLUDED here, because
+    -- sorn_routine_uses already emits every one of its items as its own chunk
+    -- below. Keeping both would index the same prose twice: once as 15-27
+    -- individually addressable items, and once as a single 6,000-18,000
+    -- character blob. That is not just wasted embedding budget -- the duplicate
+    -- competes with its own constituent items for the same query, and the blob
+    -- is the weaker match, since averaging 27 disclosure authorities into one
+    -- vector blurs the specifics a query like "disclosure to a congressional
+    -- office" needs to hit. Every other section stays whole.
+    where section_key != 'routine_uses'
 
 ),
 

@@ -116,6 +116,23 @@ def flatten_parts(parts, params, depth=0, keep=("statement", "guidance", "item")
     return lines
 
 
+def is_withdrawn(control: dict) -> bool:
+    """True for controls Rev 5 retired, e.g. AC-13, AC-15, AC-14(1).
+
+    OSCAL flags these with a `status: withdrawn` prop and gives them NO parts,
+    so build_doc produces a title-only document of well under 50 characters --
+    "AC-13 Supervision and Review - Access Control" and nothing else. Embedding
+    those is actively harmful: they are lexically close to the live controls
+    that replaced them, so they surface as near-duplicate noise in retrieval
+    while carrying no requirement text a copilot could answer from. 182 of the
+    catalog's 1,196 controls are withdrawn.
+    """
+    return any(
+        p.get("name") == "status" and p.get("value") == "withdrawn"
+        for p in control.get("props", [])
+    )
+
+
 def build_doc(control, family_id, family_title, baselines, parent=None):
     """Turn one OSCAL control (or enhancement) into an /ingest payload."""
     params = collect_params(control)
@@ -163,6 +180,9 @@ def main():
     ap.add_argument("--all-families", action="store_true")
     ap.add_argument("--no-enhancements", action="store_true",
                     help="skip control enhancements like AC-2(1)")
+    ap.add_argument("--include-withdrawn", action="store_true",
+                    help="keep controls Rev 5 withdrew (title-only, no requirement "
+                         "text). Excluded by default; see is_withdrawn().")
     ap.add_argument("--dry-run", action="store_true",
                     help="write payloads to nist_payloads.json instead of POSTing")
     args = ap.parse_args()
@@ -183,20 +203,31 @@ def main():
     )
 
     docs = []
+    withdrawn = 0
     for group in catalog.get("groups", []):
         fid, ftitle = group["id"], group["title"]
         if wanted is not None and fid.lower() not in wanted:
             continue
         for control in group.get("controls", []):
-            docs.append(build_doc(control, fid, ftitle, baselines))
+            if is_withdrawn(control) and not args.include_withdrawn:
+                withdrawn += 1
+            else:
+                docs.append(build_doc(control, fid, ftitle, baselines))
             if not args.no_enhancements:
                 for enh in control.get("controls", []):
+                    # Checked per enhancement: a live control can have withdrawn
+                    # enhancements, and a withdrawn control can retain live ones.
+                    if is_withdrawn(enh) and not args.include_withdrawn:
+                        withdrawn += 1
+                        continue
                     docs.append(build_doc(enh, fid, ftitle, baselines, parent=control["id"].upper()))
 
     if not docs:
         sys.exit("No controls matched. Check your --families values against the catalog group ids.")
 
     print(f"built {len(docs)} documents")
+    if withdrawn:
+        print(f"skipped {withdrawn} withdrawn (use --include-withdrawn to keep them)")
 
     if args.dry_run:
         out = Path(__file__).resolve().parent / "nist_payloads.json"

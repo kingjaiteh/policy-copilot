@@ -492,7 +492,18 @@ def split_routine_uses(section_text: str) -> list[dict]:
     positions: list[tuple[str, int, int]] = []
     cursor = 0
     letter_index = 0
-    alphabet = [chr(ord("A") + i) for i in range(26)]
+    # A..Z, then AA..ZZ. Federal Register SORNs with more than 26 routine uses
+    # continue with DOUBLED letters ("AA.", "BB."), not "A1." or "(a)". Stopping
+    # at Z does not drop that text -- it silently absorbs all of it into item Z,
+    # which is how DHS/USCIS/ICE/CBP-001 ended up with a 12,000-character Z
+    # holding 15 further routine uses (AA through OO) that no query could reach
+    # individually. The sequential walk makes this safe to extend: at any moment
+    # it searches for exactly one specific label, ahead of the previous hit, so
+    # adding labels cannot introduce the false positives a naive [A-Z]{1,2}\.
+    # pattern would ("U.S. Customs", "5 U.S.C. 552a").
+    alphabet = [chr(ord("A") + i) for i in range(26)] + [
+        chr(ord("A") + i) * 2 for i in range(26)
+    ]
 
     while letter_index < len(alphabet):
         letter = alphabet[letter_index]

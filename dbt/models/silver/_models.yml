@@ -99,12 +99,9 @@ models:
               field: source_id
               config: {severity: error}
 
-    tests:
-      # ROW-COUNT PARITY (WARN). There must be at least as many sections as
-      # documents; if not, explode is dropping documents wholesale.
-      - dbt_utils.fewer_rows_than:
-          compare_model: ref('stg_sorn')
-          config: {severity: error}
+    # ROW-COUNT PARITY lives in tests/assert_sections_not_fewer_than_documents.sql.
+    # dbt_utils.fewer_rows_than can only assert a strict `<` in one direction,
+    # which is the opposite of what this model needs; see that file.
 
   - name: sorn_routine_uses
     description: One row per routine use, with subitems folded into the text.

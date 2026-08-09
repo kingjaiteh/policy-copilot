@@ -36,3 +36,6 @@ scripts/nist_payloads.json
 # --- OS ---
 Thumbs.db
 .DS_Store
+
+# dbt writes logs/ into whatever directory it is invoked from
+logs/
