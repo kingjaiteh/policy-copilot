@@ -35,6 +35,26 @@ models:
               values: ["section", "routine_use", "control", "control_enhancement"]
               config: {severity: error}
 
+      - name: chunk_strategy
+        description: >
+          A/B harness tag. 'standard' chunks appear in both arms.
+          'oversized_whole' is arm A only; 'sub_split' is arm B only.
+          Arm A is chunk_strategy != 'sub_split', arm B is
+          chunk_strategy != 'oversized_whole'. See eval/README.md.
+        tests:
+          - not_null: {config: {severity: error}}
+          - accepted_values:
+              values: ["standard", "oversized_whole", "sub_split"]
+              config: {severity: error}
+
+      - name: section_key
+        description: >
+          Harmonized section key, or null for NIST controls. Carried into gold
+          so the eval harness has an ARM-INDEPENDENT grading key: chunk_id
+          differs between arms by construction (`:sec:purpose` vs
+          `:sec:purpose:p0`), so ground truth cannot be expressed in chunk_ids
+          without silently scoring arm B as a total miss on every question.
+
     tests:
       # WARN. Very short chunks embed poorly: they carry too little signal to
       # match a query, so they either never surface or surface spuriously.
@@ -46,11 +66,20 @@ models:
             warn_if: ">0"
             error_if: ">25"
 
-      # WARN. BGE embedding models truncate past their context window, so an
-      # oversized chunk silently loses its tail. Worth knowing about.
+      # CRITICAL. The embedding model truncates past its context window rather
+      # than erroring, so an over-length chunk silently loses its tail and that
+      # content becomes unretrievable while still looking present in the table.
+      #
+      # 'oversized_whole' rows are EXEMPT BY DESIGN: they exist precisely to be
+      # the un-split control arm, so flagging them would be flagging the
+      # experiment itself. Everything else must stay under the ceiling, and for
+      # sub_split parts in particular a breach means the splitter is not doing
+      # its job -- which is why this is an error and not a warn.
+      #
+      # Threshold reads from the same var the models split on, so it cannot
+      # drift away from them when the embedding model changes.
       - dbt_utils.expression_is_true:
-          expression: "chunk_char_count <= 6000"
+          expression: "chunk_char_count <= {{ var('embed_max_chars') }}"
+          where: "chunk_strategy != 'oversized_whole'"
           config:
-            severity: warn
-            warn_if: ">0"
-            error_if: ">10"
+            severity: error

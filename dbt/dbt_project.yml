@@ -20,3 +20,37 @@ models:
       +schema: silver
     gold:
       +schema: gold
+
+vars:
+  # CEILING ON AN EMBEDDED CHUNK, IN CHARACTERS.
+  #
+  # This is not a style preference, it is the context window of whichever
+  # embedding model the vector index uses. Past it the model TRUNCATES rather
+  # than erroring, so the tail of the chunk is silently never embedded and the
+  # content is unretrievable while still appearing present in the table.
+  #
+  # Set it from the model you actually configure on the index:
+  #
+  #   databricks-bge-large-en    512 tokens  ~= 2000 chars   <- assumed here
+  #   databricks-gte-large-en   8192 tokens  ~= 8000 chars
+  #
+  # (~4 characters per token for English prose. The margin in that estimate is
+  # why the value is deliberately conservative.)
+  #
+  # Changing this changes which sections get split, so it changes the corpus
+  # the A/B compares. Re-run `python scripts/validate_chunking.py` afterwards.
+  embed_max_chars: 2000
+
+  # Target size for the BODY of each sub_split part, before the title/heading
+  # prefix and the overlap tail are added. Those two together are worth roughly
+  # 350-450 characters, so the target has to sit well under embed_max_chars.
+  # Measured worst case on this corpus at these settings: 1,556 characters.
+  split_target_chars: 1200
+
+  # Characters of the previous part repeated at the head of the next one.
+  #
+  # A requirement stated at the end of one part and qualified at the start of
+  # the next is severed by a hard boundary; repeating a little context across
+  # the seam is the standard mitigation. Snapped forward to a word boundary at
+  # split time so an overlap never begins mid-word.
+  split_overlap_chars: 200

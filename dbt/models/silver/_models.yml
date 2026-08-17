@@ -103,6 +103,105 @@ models:
     # dbt_utils.fewer_rows_than can only assert a strict `<` in one direction,
     # which is the opposite of what this model needs; see that file.
 
+  - name: sorn_sections_split
+    description: >
+      Arm B of the chunking A/B. One row per PART of a section too long to
+      embed intact; sections that already fit do not appear here at all.
+      Empty is a legitimate state (it means nothing is oversized at the
+      current embed_max_chars), which is why there is no row-count test.
+    columns:
+      - name: part_text
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: part_no
+        description: Zero-based, contiguous within a section.
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: source_id
+        tests:
+          - relationships:
+              to: ref('stg_sorn')
+              field: source_id
+              config: {severity: error}
+
+    tests:
+      # CRITICAL. Uniqueness of (section, part_no) is what makes the derived
+      # chunk_id unique in gold. A duplicate here becomes a duplicate primary
+      # key in the vector index, which fails index sync rather than degrading
+      # quietly.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_id, section_key, part_no]
+          config: {severity: error}
+
+      # CRITICAL. A part longer than the target means the greedy packer let an
+      # atom through that tier 3 should have cut. The +overlap allowance is
+      # there because the overlap tail is prepended after packing.
+      - dbt_utils.expression_is_true:
+          expression: >
+            part_char_count <=
+            {{ var('split_target_chars') + var('split_overlap_chars') + 2 }}
+          config: {severity: error}
+
+    # "Did the split actually do anything" lives in
+    # tests/assert_sub_split_actually_splits.sql -- a schema test cannot express
+    # it, and it is the failure mode that cost the first implementation.
+
+  - name: sorn_routine_uses_split
+    description: >
+      The three routine uses that cross the embedding ceiling once subitems
+      are folded into routine_use_full_text, as overlapping parts. NOT part of
+      the A/B: tagged 'standard' in gold and present in both arms.
+    columns:
+      - name: part_text
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: part_no
+        tests:
+          - not_null: {config: {severity: error}}
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_id, routine_use_label, part_no]
+          config: {severity: error}
+
+      - dbt_utils.expression_is_true:
+          expression: >
+            part_char_count <=
+            {{ var('split_target_chars') + var('split_overlap_chars') + 2 }}
+          config: {severity: error}
+
+  - name: nist_controls_split
+    description: >
+      The 27 NIST controls too long to embed intact, as overlapping parts.
+      NOT part of the A/B: these are tagged 'standard' in gold and appear
+      identically in both arms. See the model header for why the original
+      "controls never need splitting" reasoning did not survive sizing the
+      threshold to the actual embedding model.
+    columns:
+      - name: part_text
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: part_no
+        tests:
+          - not_null: {config: {severity: error}}
+      - name: source_id
+        tests:
+          - relationships:
+              to: ref('stg_nist_control')
+              field: source_id
+              config: {severity: error}
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_id, part_no]
+          config: {severity: error}
+
+      - dbt_utils.expression_is_true:
+          expression: >
+            part_char_count <=
+            {{ var('split_target_chars') + var('split_overlap_chars') + 2 }}
+          config: {severity: error}
+
   - name: sorn_routine_uses
     description: One row per routine use, with subitems folded into the text.
     columns:

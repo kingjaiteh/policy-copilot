@@ -23,9 +23,15 @@ get modeled into chunks with dbt, and feed a vector index the copilot queries.
 │   ├── fetch_nist_controls.py   NIST OSCAL catalog -> ingest payloads
 │   └── verify_docx_parser.py    parser smoke test on a synthetic .docx
 ├── dbt/        bronze -> silver -> gold transforms (Week 2). See dbt/README.md.
-│   ├── models/silver/   stg_sorn, stg_nist_control, sorn_sections, sorn_routine_uses
+│   ├── models/silver/   stg_sorn, stg_nist_control, sorn_sections, sorn_routine_uses,
+│   │                    sorn_sections_split, nist_controls_split
 │   ├── models/gold/     document_chunks  <- the table the vector index reads
+│   ├── macros/          chunk_split_parts (the splitter), sorn_chunk_text
 │   └── tests/           singular tests
+├── eval/       retrieval evaluation + the chunking A/B. See eval/README.md.
+│   ├── questions.yml    labelled question set, ground truth as (source_id, section_key)
+│   ├── chunking.py      offline mirror of the dbt chunking, with a self-check
+│   └── harness.py       scores both arms, local BM25 or the real vector index
 └── data/       Local corpora and query exports. Gitignored, not part of the repo.
     └── sorn_docx/       the 26 SORN .docx source files
 ```

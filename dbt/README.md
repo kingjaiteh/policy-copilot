@@ -17,12 +17,22 @@ index reads from.
 ```
 bronze.raw_documents (source, written by scripts/load_to_delta.py)
    |
-   +-- stg_sorn ------------+-- sorn_sections ------+
-   |                        |                       |
-   |                        +-- sorn_routine_uses --+--> gold.document_chunks
-   |                                                |
-   +-- stg_nist_control ----------------------------+
+   +-- stg_sorn ------------+-- sorn_sections --------+
+   |                        |        |                |
+   |                        |        +-- sorn_sections_split --+
+   |                        |                                  |
+   |                        +-- sorn_routine_uses -------------+--> gold.document_chunks
+   |                                                           |
+   +-- stg_nist_control ---------------------------------------+
+                            |                                  |
+                            +-- nist_controls_split -----------+
 ```
+
+The two `*_split` models handle text too long to embed without silent
+truncation. They share their algorithm via `macros/chunk_split_parts.sql`.
+`sorn_sections_split` is arm B of the chunking A/B; `nist_controls_split` is
+not part of the experiment and appears identically in both arms. See
+`../eval/README.md`.
 
 ## Setup
 
