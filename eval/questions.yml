@@ -1,0 +1,246 @@
+# Retrieval evaluation set for Policy Copilot.
+#
+# GROUND TRUTH IS (source_id, section_key), NOT chunk_id.
+#
+#   This is the single most important design decision in the file. chunk_id
+#   differs between the two arms by construction -- arm A returns
+#   'sorn:DHS/CBP-024:sec:policies_retention', arm B returns that same content
+#   as ':p0', ':p1', ':p2'. Labelling ground truth with chunk_ids would score
+#   arm B as a total miss on every contested question and the A/B would report
+#   a landslide for arm A that is pure artefact.
+#
+#   (source_id, section_key) is stable across arms, which is why gold carries
+#   section_key as a real column. For NIST, section_key is null and source_id
+#   is the control id.
+#
+# TWO CLASSES OF QUESTION, AND WHY BOTH ARE HERE:
+#
+#   contested  the answer lives in a section that IS over the embedding
+#              ceiling, so the arms genuinely differ. These are the only
+#              questions that can move the numbers.
+#
+#   control    the answer lives in a chunk that is identical in both arms
+#              (a routine use, a short section, a NIST control).
+#
+#              They are NOT expected to score identically -- arm B holds more
+#              chunks, which compete for the same top-k slots. What harness.py
+#              measures over them is CROWDING, the cost of that competition,
+#              and the contested gain should be read net of it. The hard
+#              validity check is structural and runs over the corpus, not over
+#              these scores; see eval/README.md.
+#
+# `answer_locus` records WHERE in the section the answer sits. Splitting should
+# help most for 'tail' -- content far enough into a long section that a whole
+# section embedding dilutes it, and that truncation would drop outright.
+
+questions:
+
+  # --- contested: answer inside an over-ceiling section --------------------
+
+  - id: q01
+    question: How long does CBP retain raw, unevaluated threat reporting in its intelligence records system?
+    targets: [{source_id: "DHS/CBP-024", section_key: policies_retention}]
+    class: contested
+    answer_locus: middle
+    note: Answer is "thirty (30) years", item 2 of a numbered retention list.
+
+  - id: q02
+    question: Which CBP intelligence products are kept as permanent records and transferred to the National Archives after twenty years?
+    targets: [{source_id: "DHS/CBP-024", section_key: policies_retention}]
+    class: contested
+    answer_locus: tail
+    note: Finished Intelligence Case Files. Last item in the section.
+
+  - id: q03
+    question: Does CBP's intelligence records system include lost and stolen passport data?
+    targets: [{source_id: "DHS/CBP-024", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  - id: q04
+    question: What transaction metadata does CBP's intelligence system retain about date, time, location and frequency?
+    targets: [{source_id: "DHS/CBP-024", section_key: categories_of_records}]
+    class: contested
+    answer_locus: tail
+    note: Item 17, the final item.
+
+  - id: q05
+    question: Are individuals with pertinent knowledge of a case but not implicated in any violation covered by the CBP intelligence system?
+    targets: [{source_id: "DHS/CBP-024", section_key: categories_of_individuals}]
+    class: contested
+    answer_locus: middle
+
+  - id: q06
+    question: Does FEMA's fraud investigation system collect social media posts, user handles and comments?
+    targets: [{source_id: "DHS/FEMA-015", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  - id: q07
+    question: Does FEMA use voter registration records to determine location in fraud investigations?
+    targets: [{source_id: "DHS/FEMA-015", section_key: categories_of_records}]
+    class: contested
+    answer_locus: tail
+
+  - id: q08
+    question: What dental records does ICE keep about people in detention?
+    targets: [{source_id: "DHS/ICE-013", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+    note: Dental history, x-rays, treatment and procedure records.
+
+  - id: q09
+    question: Does ICE record reports to public health authorities about detainee exposure to communicable disease?
+    targets: [{source_id: "DHS/ICE-013", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  - id: q10
+    question: When are Coast Guard Official Military Personnel Files transferred to the National Archives?
+    targets: [{source_id: "DHS/USCG-014", section_key: policies_retention}]
+    class: contested
+    answer_locus: middle
+    note: 62 years after retirement or separation.
+
+  - id: q11
+    question: How long are Coast Guard civilian training and education records kept before destruction?
+    targets: [{source_id: "DHS/USCG-014", section_key: policies_retention}]
+    class: contested
+    answer_locus: head
+    note: Five years, under GRS 2 item 29b.
+
+  - id: q12
+    question: Who is the system manager for Coast Guard records used to determine legal sufficiency for garnishment of wages?
+    targets: [{source_id: "DHS/USCG-014", section_key: system_manager}]
+    class: contested
+    answer_locus: middle
+    note: Commanding Officer, Personnel Services Center, Topeka KS.
+
+  - id: q13
+    question: Does the Coast Guard personnel record system store color blindness and body mass index?
+    targets: [{source_id: "DHS/USCG-014", section_key: categories_of_records}]
+    class: contested
+    answer_locus: head
+
+  - id: q14
+    question: What arrival information does the Coast Guard collect about the last five foreign ports a vessel visited?
+    targets: [{source_id: "DHS/USCG-029", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  - id: q15
+    question: What does the hardcopy paper Alien File contain?
+    targets: [{source_id: "DHS/USCIS/ICE/CBP-001", section_key: categories_of_records}]
+    class: contested
+    answer_locus: head
+
+  - id: q16
+    question: Why does ICE screen individuals who want to sponsor unaccompanied alien children in HHS custody?
+    targets: [{source_id: "DHS/ICE-007", section_key: purpose}]
+    class: contested
+    answer_locus: head
+
+  - id: q17
+    question: Which systems hold names, aliases and A-File numbers collected during a DHS enforcement encounter?
+    targets: [{source_id: "DHS/ICE-002", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+    note: TECS and ENFORCE/IDENT.
+
+  - id: q18
+    question: What complaint categories does the Office of the Immigration Detention Ombudsman track?
+    targets: [{source_id: "DHS/OIDO-001", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  - id: q19
+    question: Are vessels and aircraft used in customs violations covered by the CBP seized assets system?
+    targets: [{source_id: "DHS/CBP-013", section_key: categories_of_individuals}]
+    class: contested
+    answer_locus: middle
+
+  - id: q20
+    question: Does the ICE forensic laboratory system hold palm prints for forensic examination?
+    targets: [{source_id: "DHS/ICE-014", section_key: categories_of_records}]
+    class: contested
+    answer_locus: head
+
+  - id: q21
+    question: What information does ICE keep about NCIC hit confirmations and immigration lookouts?
+    targets: [{source_id: "DHS/ICE-007", section_key: categories_of_records}]
+    class: contested
+    answer_locus: middle
+
+  # --- control: answer in a chunk identical across both arms ---------------
+
+  - id: c01
+    question: What does NIST 800-53 require for account management?
+    targets: [{source_id: "AC-2", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c02
+    question: Which NIST control covers protection of information at rest?
+    targets: [{source_id: "SC-28", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c03
+    question: What does NIST say about audit record review, analysis and reporting?
+    targets: [{source_id: "AU-6", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c04
+    question: Which NIST control governs authenticator management such as passwords and tokens?
+    targets: [{source_id: "IA-5", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c05
+    question: What is the NIST control for least privilege?
+    targets: [{source_id: "AC-6", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c06
+    question: Which NIST control addresses data mining protection?
+    targets: [{source_id: "AC-23", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c07
+    question: What does NIST require for unsuccessful logon attempts?
+    targets: [{source_id: "AC-7", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c08
+    question: Which NIST control covers an insider threat program?
+    targets: [{source_id: "PM-12", section_key: null}]
+    class: control
+    answer_locus: whole
+
+  - id: c09
+    question: What legal authority does the Coast Guard Military Personnel Records system rely on?
+    targets: [{source_id: "DHS/USCG-014", section_key: authority_for_maintenance}]
+    class: control
+    answer_locus: whole
+
+  - id: c10
+    question: What exemptions are claimed for the CBP intelligence records system?
+    targets: [{source_id: "DHS/CBP-024", section_key: exemptions}]
+    class: control
+    answer_locus: whole
+
+  - id: c11
+    question: How are records retrieved from the FEMA fraud investigations system?
+    targets: [{source_id: "DHS/FEMA-015", section_key: policies_retrieval}]
+    class: control
+    answer_locus: whole
+
+  - id: c12
+    question: What safeguards protect the ICE health service records system?
+    targets: [{source_id: "DHS/ICE-013", section_key: safeguards}]
+    class: control
+    answer_locus: whole
